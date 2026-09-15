@@ -183,29 +183,30 @@ const ROUNDS = [
       e:"발사체가 우주로 가는 출발점이라면, 우주수송선과 달 착륙선은 그 이후의 임무를 가능하게 하는 영역입니다." },
     { q:"현재 항공기 엔진을 자체적으로 생산할 수 있는 나라는 10개국이 넘는다.", a:false, bu:"항공사업부",
       e:"미국, 영국, 프랑스, 러시아 정도에 불과합니다. 우리 회사는 그 좁은 문을 두드리고 있는 국내 유일의 항공엔진 기업입니다." },
-    { q:"PGM사업부는 폴란드에 천무를 수출한 성과를 통해 기술적 자립을 입증했다.", a:true, bu:"PGM사업부",
-      e:"해외기술을 국산화하는 단계에서 시작해, 지금은 독자적인 설계 능력을 갖춘 글로벌 수준의 사업부로 성장했습니다." },
+    { q:"PGM사업부는 유도무기의 설계와 개발을 담당하고, 양산은 다른 사업부가 맡는다.", a:false, bu:"PGM사업부",
+      e:"PGM사업부는 정밀유도무기의 설계부터 개발, 양산까지 전 과정을 직접 책임집니다. 해외기술 국산화에서 출발해 지금은 독자 설계 능력을 갖춘 글로벌 수준의 사업부로 성장했습니다." },
     { q:"장비의 전체 운용 비용에서는 초기 도입가가 운용유지 비용보다 더 큰 비중을 차지한다.", a:false, bu:"MRO사업부",
       e:"반대입니다. 도입가가 30~40%, 운용유지 비용이 60~70%로 유지·보수 쪽이 훨씬 큽니다. MRO 사업이 필수적인 이유입니다." },
-    { q:"LS사업부의 MUM-T는 무인 차량·로봇이 유인 체계와 함께 작전을 수행하는 유무인 복합체계를 뜻한다.", a:true, bu:"LS사업부",
-      e:"미래 전장의 핵심 전력으로 자리잡을 것으로 보고 있으며, LS사업부가 가장 집중하는 방향 중 하나입니다." },
   ]},
 
   { name:"2라운드 · 4지선다", type:"mc", pt:15, sec:15, spd:0.5, grace:5, hint:"보기를 끝까지 읽어보세요", qs:[
     { q:"항공사업부가 가스터빈 엔진 창정비 사업을 시작한 해는?", o:["1965년","1979년","1988년","1995년"], a:1, bu:"항공사업부",
-      e:"1979년입니다. 이후 45년간 1만 대 이상의 엔진을 누적 생산했습니다." },
+      e:"이후 45년간 1만 대 이상의 엔진을 누적 생산했습니다." },
     { q:"MRO사업부가 신설된 시점은?", o:["2023년 4월","2023년 7월","2023년 10월","2024년 1월"], a:2, bu:"MRO사업부",
       e:"2023년 4월 3사 합병 직후, 항공엔진과 군수장비 정비 경험을 기반으로 전문성을 강화하기 위해 그해 10월 신설되었습니다." },
     { q:"누리호 5차 발사 예정일은?", o:["2026년 9월 23일","2026년 10월 7일","2026년 10월 21일","2026년 11월 4일"], a:1, bu:"우주사업부",
       e:"역대 최다인 15기의 위성을 싣고 국내 최초로 군집위성을 궤도에 투입하며, 한화에어로스페이스가 체계종합기업으로 참여한 이후 두 번째 발사입니다." },
     { q:"다음 중 PGM사업부의 담당 제품이 아닌 것은?", o:["L-SAM","고체 추진기관 점화기","유도무기 탄두","타이곤 장갑차"], a:3, bu:"PGM사업부",
       e:"타이곤 장갑차는 LS사업부 기동체계 제품입니다. PGM은 유도조종·탄두·추진기관을 담당하고, 두 사업부의 기술이 결합되어야 하나의 완성된 작전 체계가 됩니다." },
+    { q:"LS사업부가 미래 전장의 핵심으로 꼽은 ‘MUM-T’는 무엇의 약자일까요?",
+      o:["Multi-Unit Missile Targeting","Manned-Unmanned Teaming","Mobile Utility Maintenance Technology","Modular Unmanned Munition Transport"], a:1, bu:"LS사업부",
+      e:"우리말로는 유무인 복합체계입니다. 무인 차량과 로봇이 유인 체계와 함께 작전을 수행하는 방식으로, LS사업부가 가장 집중하는 방향 중 하나입니다." },
   ]},
 
   { name:"3라운드 · 짧은 주관식", type:"text", pt:15, sec:15, spd:0.3, grace:5, hint:"대소문자와 띄어쓰기는 신경 쓰지 않아도 됩니다", qs:[
     { q:"LS사업부 구성원들은 인터뷰에서 스스로를 ‘OO’ 같다고 표현했습니다. 들어갈 단어는?", a:"찰흙", bu:"LS사업부",
       e:"각자 하나의 찰흙이 되어 필요한 상황에 필요한 모습으로 일하다가, 원팀이 될 필요가 있을 때는 하나로 뭉친다는 뜻입니다." },
-    { q:"항공사업부의 New Sky 개발 방향 ‘FCS’에서 C는?  ( Faster, ____ , Scalable )", a:"cheaper,치퍼", bu:"항공사업부",
+    { q:"항공사업부의 New Sky 개발 방향 ‘FCS’에서 C는?  ( Faster, ____ , Scalable )", a:"cheaper", bu:"항공사업부",
       e:"넓은 요구 스펙트럼에 맞춰 더 빠르고 가격 경쟁력 있는 엔진을 확장 가능하게 개발한다는 뜻입니다." },
     { q:"LS사업부의 레드백은 호주에 서식하는 ‘이것’의 이름을 따서 만들어졌습니다. 이것은?", a:"독거미,붉은등거미", bu:"LS사업부",
       e:"호주에 서식하는 붉은등거미(redback spider)에서 이름을 따왔습니다. 보너스 문항이었습니다." },
@@ -234,8 +235,8 @@ const ROUNDS = [
       e:"장거리 지대공 유도무기로, PGM사업부의 정밀유도무기 기술이 집약된 체계입니다." },
   ]},
 
-  { name:"파이널 · 고난이도", type:"text", pt:50, sec:35, spd:0.3, grace:5,
-    hint:"마지막 문제입니다. 배점 50점", qs:[
+  { name:"파이널 · 고난이도", type:"text", pt:50, sec:35, spd:0, grace:0,
+    hint:"마지막 문제입니다. 맞히면 50점 (시간 감점 없음)", qs:[
     { q:"MRO는 어떤 세 단어의 약자일까요? (영문으로 세 단어, 순서 무관)",
       a:"maintenance repair overhaul", anyOrder:true, bu:"MRO사업부",
       e:"Maintenance, Repair, Overhaul — 유지보수·정비, 수리, 창정비를 뜻합니다. 장비 도입 이후 운용유지 비용이 전체의 60~70%를 차지하는 만큼, MRO는 회사의 핵심 사업 영역입니다." },
@@ -294,7 +295,7 @@ function connBanner(){
     <div style="font-size:13.5px;line-height:1.7;color:var(--ink)">${esc(CONN_ERR)}</div></div>`;
 }
 
-const S = { pick:undefined, pickFor:null, ordFor:null, invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, joinAt:0, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
+const S = { busy:false, pick:undefined, pickFor:null, ordFor:null, invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, joinAt:0, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
 const el = document.getElementById("app");
 const K = k => `bq2:${S.code}:${k}`;
 const esc = s => String(s).replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -500,12 +501,38 @@ async function start(){
   S.tick = setInterval(()=>sync(my), S.admin?1500:3000);
   clearInterval(S.tickC);
   S.tickC = setInterval(()=>pollCtrl(my), 700);   // 문제 전환은 0.7초마다 감지
-  if(S.admin) setInterval(()=>{ if(my===S.epoch && S.admin && S.ctrl?.live && !S.ctrl.show) screenAdmin(); }, 500);
+  if(S.admin) setInterval(()=>{
+    if(S.busy) return;                       // 조작 중에는 화면을 다시 그리지 않습니다
+    if(my===S.epoch && S.admin && S.ctrl?.live && !S.ctrl.show) screenAdmin();
+  }, 500);
 }
 async function sync(my){
   const ctrl=(await get("ctrl"))||D0, peers=await fetchPeers();
   if(my!==undefined && my!==S.epoch) return;      // 화면이 이미 바뀐 뒤 늦게 온 응답은 버립니다
-  S.ctrl=ctrl; S.peers=peers; paint();
+  S.ctrl=ctrl; S.peers=peers;
+  if(S.admin && S.busy) return;                   // 관리자가 조작 중이면 화면 갱신 보류
+  paint();
+}
+
+// 관리자 조작 공통 처리: 중복 클릭 차단 + 최신 상태 기준 계산 + 즉시 피드백
+async function adminAction(btn, label, build){
+  if(S.busy) return;
+  S.busy = true;
+  const old = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = label; }
+  try{
+    const cur = (await get("ctrl")) || S.ctrl || D0;   // 화면에 박제된 값이 아니라 현재 값을 읽습니다
+    const next = build(cur);
+    if(next){
+      const ok = await put("ctrl", next);
+      if(!ok){ alert("서버에 저장하지 못했습니다.\n" + (CONN_ERR || "잠시 후 다시 시도해 주세요.")); }
+      else S.ctrl = next;
+    }
+  } finally {
+    S.busy = false;
+    if(btn){ btn.disabled = false; btn.textContent = old; }
+    screenAdmin();
+  }
 }
 // 문제 전환을 즉시 감지하기 위해 ctrl만 짧은 주기로 확인합니다
 async function pollCtrl(my){
@@ -997,20 +1024,36 @@ function screenAdmin(){
       alert("서버에 저장하지 못했습니다.\n"+(CONN_ERR||"콘솔(F12)에서 에러 메시지를 확인해 주세요.")); return; }
     sync(S.epoch);
   });
-  el.querySelector("#show")?.addEventListener("click",async()=>{ await put("ctrl",{...c,show:!c.show}); sync(); });
-  el.querySelector("#prev")?.addEventListener("click",async()=>{
-    let {ri,qi}=c;
-    if(qi>0) qi--; else if(ri>0){ ri--; qi=ROUNDS[ri].qs.length-1; }
-    await put("ctrl",{...c,ri,qi,show:false,started:nowMs()}); sync(); });
-  el.querySelector("#next")?.addEventListener("click",async()=>{
-    let {ri,qi}=c;
-    if(qi<ROUNDS[ri].qs.length-1) qi++;
-    else if(ri<ROUNDS.length-1){ ri++; qi=0; }
-    else { await put("ctrl",{...c,ri:ROUNDS.length,show:true}); sync(); return; }
-    await put("ctrl",{...c,ri,qi,show:false,started:nowMs()}); sync(); });
-  el.querySelectorAll("[data-r]").forEach(b=>b.onclick=async()=>{
-    const v=b.dataset.r;
-    await put("ctrl",{...c,live:true,ri:v==="end"?ROUNDS.length:+v,qi:0,show:false,started:nowMs()}); sync(); });
+  el.querySelector("#show")?.addEventListener("click", ev =>
+    adminAction(ev.currentTarget, "처리 중…", cur => ({...cur, show: !cur.show})));
+
+  el.querySelector("#prev")?.addEventListener("click", ev =>
+    adminAction(ev.currentTarget, "이동 중…", cur => {
+      let {ri,qi} = cur;
+      if(ri >= ROUNDS.length){ ri = ROUNDS.length-1; qi = ROUNDS[ri].qs.length-1; }
+      else if(qi > 0) qi--;
+      else if(ri > 0){ ri--; qi = ROUNDS[ri].qs.length-1; }
+      else return null;                                  // 첫 문제면 아무것도 하지 않음
+      return {...cur, ri, qi, show:false, started:nowMs()};
+    }));
+
+  el.querySelector("#next")?.addEventListener("click", ev =>
+    adminAction(ev.currentTarget, "이동 중…", cur => {
+      let {ri,qi} = cur;
+      if(ri >= ROUNDS.length) return null;               // 이미 최종 순위면 끝
+      if(qi < ROUNDS[ri].qs.length-1) qi++;
+      else if(ri < ROUNDS.length-1){ ri++; qi = 0; }
+      else return {...cur, ri: ROUNDS.length, show:true}; // 마지막 → 최종 순위
+      return {...cur, ri, qi, show:false, started:nowMs()};
+    }));
+
+  el.querySelectorAll("[data-r]").forEach(b => b.onclick = ev => {
+    const v = b.dataset.r;
+    adminAction(ev.currentTarget, "이동 중…", cur => ({
+      ...cur, live:true, ri: v==="end" ? ROUNDS.length : +v,
+      qi:0, show:false, started:nowMs()
+    }));
+  });
   el.querySelector("#invite")?.addEventListener("click", ()=>{ S.invite=true; screenInvite(); });
   el.querySelector("#simadd")?.addEventListener("click", simAdd);
   el.querySelector("#simans")?.addEventListener("click", simAnswer);
