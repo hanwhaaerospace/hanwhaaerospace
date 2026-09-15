@@ -161,7 +161,7 @@ const ADMIN_PIN = "0916";
 const TILE = { cols:10, rows:8, start:0.05, end:0.42 };  // 더 잘게, 더 천천히
 
 const ROUNDS = [
-  { name:"1라운드 · O/X", type:"ox", pt:10, sec:10, spd:0.5, grace:5, hint:"사업부별로 한 문제씩 나옵니다", qs:[
+  { name:"1라운드 · O/X", type:"ox", pt:10, sec:15, spd:0.5, grace:5, hint:"사업부별로 한 문제씩 나옵니다", qs:[
     { q:"우주사업부는 발사체를 넘어 우주수송선과 달 착륙선 분야까지 영역을 넓혀가고 있다.", a:true, bu:"우주사업부",
       e:"발사체가 우주로 가는 출발점이라면, 우주수송선과 달 착륙선은 그 이후의 임무를 가능하게 하는 영역입니다." },
     { q:"현재 항공기 엔진을 자체적으로 생산할 수 있는 나라는 10개국이 넘는다.", a:false, bu:"항공사업부",
@@ -174,7 +174,7 @@ const ROUNDS = [
       e:"미래 전장의 핵심 전력으로 자리잡을 것으로 보고 있으며, LS사업부가 가장 집중하는 방향 중 하나입니다." },
   ]},
 
-  { name:"2라운드 · 4지선다", type:"mc", pt:15, sec:10, spd:0.5, grace:5, hint:"보기를 끝까지 읽어보세요", qs:[
+  { name:"2라운드 · 4지선다", type:"mc", pt:15, sec:15, spd:0.5, grace:5, hint:"보기를 끝까지 읽어보세요", qs:[
     { q:"항공사업부가 가스터빈 엔진 창정비 사업을 시작한 해는?", o:["1965년","1979년","1988년","1995년"], a:1, bu:"항공사업부",
       e:"1979년입니다. 이후 45년간 1만 대 이상의 엔진을 누적 생산했습니다." },
     { q:"MRO사업부가 신설된 시점은?", o:["2023년 4월","2023년 7월","2023년 10월","2024년 1월"], a:2, bu:"MRO사업부",
@@ -198,7 +198,7 @@ const ROUNDS = [
       e:"발사체는 우주로 가는 출발점이고, 우주수송선과 달 착륙선은 그 이후의 임무를 수행하는 영역입니다." },
   ]},
 
-  { name:"4라운드 · 순서 맞추기", type:"order", pt:20, sec:10, spd:0.3, grace:5, hint:"먼저 일어난 일부터 차례로 누르세요", qs:[
+  { name:"4라운드 · 순서 맞추기", type:"order", pt:20, sec:20, spd:0.3, grace:5, hint:"먼저 일어난 일부터 차례로 누르세요", qs:[
     { q:"항공사업부가 성장해 온 순서대로 나열하세요.", bu:"항공사업부",
       items:["가스터빈 엔진 창정비 사업 시작","한국형 헬기 수리온의 국산화 엔진 개발","GE 제휴로 KF-21 엔진통합개발 수행","첨단항공엔진 독자개발 추진"],
       e:"1979년 창정비로 출발해 수리온 엔진 국산화를 이뤘고, 지금은 GE와 함께 KF-21 엔진통합개발을 수행하며 첨단항공엔진 독자개발을 추진하고 있습니다." },
@@ -278,7 +278,7 @@ function connBanner(){
     <div style="font-size:13.5px;line-height:1.7;color:var(--ink)">${esc(CONN_ERR)}</div></div>`;
 }
 
-const S = { invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
+const S = { invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, joinAt:0, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
 const el = document.getElementById("app");
 const K = k => `bq2:${S.code}:${k}`;
 const esc = s => String(s).replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -297,8 +297,28 @@ const save = () => put(`p:${S.pid}`, S.me);
 const qid = c => `${c.ri}-${c.qi}`;
 const curQ = c => ROUNDS[c.ri]?.qs[c.qi];
 const durOf = (ri,qi) => (qi!==undefined && ROUNDS[ri]?.qs?.[qi]?.sec) || ROUNDS[ri]?.sec || COUNT;
-let CLOCK_OFF = 0;   // (서버 기준 시각 - 내 시계) 보정값
+let CLOCK_OFF = 0;            // (서버 시각 - 내 시계) 보정값
+let CLOCK_OK  = false;
 const nowMs = () => Date.now() + CLOCK_OFF;
+
+// 서버 응답의 Date 헤더로 내 시계 오차를 보정합니다.
+// 이걸 안 하면 기기마다 시계가 달라 남은 시간이 서로 다르게 보입니다.
+async function syncClock(){
+  try{
+    const t0 = Date.now();
+    const res = await fetch(SUPABASE_URL + "/rest/v1/", {
+      method: "HEAD",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY }
+    });
+    const t1 = Date.now();
+    const d = res.headers.get("date");
+    if(d){
+      const server = new Date(d).getTime() + (t1 - t0) / 2;  // 왕복 지연 절반 보정
+      CLOCK_OFF = server - t1;
+      CLOCK_OK  = true;
+    }
+  }catch(e){ console.warn("[clock] 동기화 실패, 로컬 시계 사용", e); }
+}
 const secLeft = () => {
   const dur = durOf(S.ctrl.ri, S.ctrl.qi);
   if(!S.ctrl.started) return dur;
@@ -448,6 +468,7 @@ function screenJoin(mode){
 /* ── 루프 ──────────────────────────────────────────────────────── */
 async function start(){
   clearInterval(S.tick);
+  S.joinAt = nowMs();          // 입장 시각 — 이미 진행 중이던 문제와 구분하기 위해
   const my = ++S.epoch;                          // 이 시작 이후의 응답만 반영합니다
   await sync(my);
   S.tick = setInterval(()=>sync(my), S.admin?1500:3000);
@@ -498,6 +519,7 @@ function paint(force){
   S.rendered = iid;
   const t = ROUNDS[S.ctrl.ri]?.type;
   if(!t) return screenFinal();
+  if(missedThis()){ el.innerHTML = missedScreen(); return bindHome(); }
   if(t==="ox") return screenOX();
   if(t==="mc"||t==="bet") return screenChoice(t);
   if(t==="text") return screenText();
@@ -536,6 +558,19 @@ function tail(q, prefix){
     <b style="color:var(--ignite)">${esc(prefix)}</b> ${esc(q.e)}</div></div>`;
 }
 
+// 내가 입장하기 전에 이미 시작된 문제인지
+function missedThis(){
+  return !!(S.joinAt && S.ctrl?.started && S.ctrl.started < S.joinAt - 1500
+            && S.me && S.me.ans[qid(S.ctrl)]===undefined && !revealed());
+}
+function missedScreen(){
+  const c=S.ctrl, r=ROUNDS[c.ri];
+  return `<div class="wrap">${head(`${c.ri+1}R · ${c.qi+1}/${r.qs.length}`)}
+    <div class="wait"><span class="pulse"></span>
+      이 문제는 이미 진행 중입니다<br>
+      <b style="color:var(--ink)">다음 문제부터 참여합니다</b><br>
+      <span style="font-size:14px">잠시만 기다려 주세요</span></div></div>`;
+}
 function screenReady(){
   el.innerHTML = `<div class="wrap">${head("대기 중")}
     <div class="wait"><span class="pulse"></span>진행자가 시작하면 첫 문제가 열립니다</div>
@@ -933,6 +968,8 @@ function screenAdmin(){
 
 /* ── 부팅 ──────────────────────────────────────────────────────── */
 (async () => {
+  await syncClock();
+  setInterval(syncClock, 60000);   // 1분마다 재보정
   await checkConnection();
   const s = localStorage.getItem("bq2_me");
   if(s){ try{ const {code,pid}=JSON.parse(s); S.code=code; S.pid=pid;
