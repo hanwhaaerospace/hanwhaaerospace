@@ -133,6 +133,15 @@
     border-radius:10px;padding:11px;font-size:12.5px}
   .simbar button:hover{border-color:var(--flame);color:var(--ink)}
   .envnote{font-size:12px;color:var(--mute);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:14px;line-height:1.65}
+  .subwrap{margin-top:18px}
+  .subbtn{width:100%;background:var(--flame);color:#0B1226;font-weight:700;font-size:17px;
+    border-radius:13px;padding:18px;border:none;cursor:pointer}
+  .subbtn:disabled{opacity:.3;cursor:default}
+  .doneMsg{background:rgba(74,222,128,.13);border:1px solid rgba(74,222,128,.5);color:var(--ok);
+    border-radius:14px;padding:20px;text-align:center;margin-top:18px;
+    animation:pop .34s cubic-bezier(.2,1.5,.4,1)}
+  .doneMsg .t{font-size:19px;font-weight:700;margin-bottom:5px}
+  .doneMsg .s{font-size:14px;opacity:.9}
   .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--mute);margin-right:6px}
 </style>
 </head>
@@ -278,7 +287,7 @@ function connBanner(){
     <div style="font-size:13.5px;line-height:1.7;color:var(--ink)">${esc(CONN_ERR)}</div></div>`;
 }
 
-const S = { invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, joinAt:0, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
+const S = { pick:undefined, pickFor:null, ordFor:null, invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, joinAt:0, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
 const el = document.getElementById("app");
 const K = k => `bq2:${S.code}:${k}`;
 const esc = s => String(s).replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -295,6 +304,14 @@ async function fetchPeers(){
 }
 const save = () => put(`p:${S.pid}`, S.me);
 const qid = c => `${c.ri}-${c.qi}`;
+// 제출 전 임시 선택 (문제가 바뀌면 자동으로 비워집니다)
+function pickOf(id){ if(S.pickFor!==id){ S.pick=undefined; S.pickFor=id; } return S.pick; }
+function setPick(id,v){ S.pickFor=id; S.pick=v; }
+function doneMsg(){ return `<div class="doneMsg"><div class="t">제출이 완료되었습니다</div>
+  <div class="s">조금만 기다려 주세요!</div></div>`; }
+function submitBar(enabled){
+  return `<div class="subwrap"><button class="subbtn" data-submit ${enabled?"":"disabled"}>제출하기</button></div>`;
+}
 const curQ = c => ROUNDS[c.ri]?.qs[c.qi];
 const durOf = (ri,qi) => (qi!==undefined && ROUNDS[ri]?.qs?.[qi]?.sec) || ROUNDS[ri]?.sec || COUNT;
 let CLOCK_OFF = 0;            // (서버 시각 - 내 시계) 보정값
@@ -411,6 +428,7 @@ function screenJoin(mode){
       const c=el.querySelector("#c").value.trim(), n=el.querySelector("#n").value.trim();
       if(!c||!n){ el.querySelector("#err").textContent="세션 코드와 이름을 입력해 주세요."; return; }
       const btn=ev.currentTarget; btn.disabled=true; btn.textContent="입장하는 중…";
+      await syncClock();
       S.code=c.toUpperCase(); S.pid="p"+Math.random().toString(36).slice(2,9);
       S.me={ id:S.pid, name:n, team:+el.querySelector("#t").value, ans:{} };
       const saved = await save();
@@ -434,6 +452,7 @@ function screenJoin(mode){
       if(p!==ADMIN_PIN){ el.querySelector("#err").textContent="PIN이 일치하지 않습니다."; return; }
       if(!c){ el.querySelector("#err").textContent="세션 코드를 입력해 주세요."; return; }
       const btn=ev.currentTarget; btn.disabled=true; btn.textContent="접속하는 중…";
+      await syncClock();
       const ok = await checkConnection();
       if(!ok){ btn.disabled=false; btn.textContent="관리자로 시작"; el.querySelector("#err").textContent=CONN_ERR; return; }
       S.code=c.toUpperCase(); S.admin=true; start();
@@ -487,7 +506,9 @@ async function pollCtrl(my){
   if(!ctrl || (my!==undefined && my!==S.epoch)) return;
   const changed = !S.ctrl || ctrl.ri!==S.ctrl.ri || ctrl.qi!==S.ctrl.qi
                   || ctrl.show!==S.ctrl.show || ctrl.live!==S.ctrl.live || ctrl.started!==S.ctrl.started;
-  if(changed){ S.ctrl=ctrl; S.rendered=null; S.sig=null; paint(true); }
+  if(changed){ S.ctrl=ctrl; S.rendered=null; S.sig=null;
+    S.pick=undefined; S.pickFor=null; S.ord=[]; S.ordFor=null; S.draft=""; S.draftFor=null;
+    paint(true); }
 }
 function refreshClock(){
   const t = secLeft();
@@ -501,7 +522,9 @@ function refreshClock(){
 }
 function sig(){
   const c=S.ctrl, id=qid(c);
-  return [c.ri, c.qi, c.live?1:0, revealed()?1:0, c.started||0,
+  return [c.ri, c.qi, c.live?1:0, revealed()?1:0, c.started||0, S.bet,
+          S.pickFor===id ? JSON.stringify(S.pick ?? null) : "",
+          S.ordFor===id ? S.ord.join(",") : "",
           S.me ? JSON.stringify(S.me.ans[id] ?? null) : ""].join("|");
 }
 function paint(force){
@@ -584,122 +607,147 @@ function screenReady(){
 
 function screenOX(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||secLeft()===0;
-  const mv = my?.v;
-  const cls = v => sh ? (v===q.a?"right":(mv===v?"wrong":"")) : (mv===v?"pick":"");
-  const tag = v => (sh && mv===v) ? `<span class="mine-tag">내 선택</span>` : "";
+  const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0;
+  const cur = sent ? my.v : pickOf(id);
+  const cls = v => sh ? (v===q.a?"right":(cur===v?"wrong":"")) : (cur===v?"pick":"");
+  const tag = v => (sh && sent && my.v===v) ? `<span class="mine-tag">내 선택</span>` : "";
   el.innerHTML = `<div class="wrap">${head(`1R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
-    <div class="ox"><button data-v="1" class="${cls(true)}" ${closed?"disabled":""}>O${tag(true)}</button>
-    <button data-v="0" class="${cls(false)}" ${closed?"disabled":""}>×${tag(false)}</button></div>
+    <div class="ox"><button data-v="1" class="${cls(true)}" ${locked?"disabled":""}>O${tag(true)}</button>
+    <button data-v="0" class="${cls(false)}" ${locked?"disabled":""}>×${tag(false)}</button></div>
+    ${sh ? "" : (sent ? doneMsg() : submitBar(cur!==undefined))}
     ${tail(q, `정답은 ${q.a?"O":"X"}입니다.`)}</div>`;
   bindHome();
-  if(!closed) el.querySelectorAll("[data-v]").forEach(b=>b.onclick=async()=>{
-    S.me.ans[id]={v:b.dataset.v==="1", k:factorNow()}; await save(); paint(); });
+  if(!locked){
+    el.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{ setPick(id, b.dataset.v==="1"); paint(true); });
+    el.querySelector("[data-submit]")?.addEventListener("click", async()=>{
+      const v=pickOf(id); if(v===undefined) return;
+      S.me.ans[id]={v, k:factorNow()}; await save(); paint(true); });
+  }
 }
 
 function screenChoice(type){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||secLeft()===0, isBet=type==="bet";
-  const pk = a => a?.v;
+  const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0, isBet=type==="bet";
+  const cur = sent ? my.v : pickOf(id);
   const lbl = isBet ? "FINAL" : `${c.ri+1}R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`;
   el.innerHTML = `<div class="wrap">${head(lbl)}${clock(t)}${verdict()}${buBadge(q)}
     <h2>${esc(q.q)}</h2>
-    ${isBet&&!closed?`<p class="sub">얼마를 걸까요? 맞히면 그만큼 얻고, 틀리면 그만큼 잃습니다.</p>
+    ${isBet&&!locked?`<p class="sub">얼마를 걸까요? 맞히면 그만큼 얻고, 틀리면 그만큼 잃습니다.</p>
       <div class="bet">${[10,20,30].map(v=>`<button data-b="${v}" class="${S.bet===v?"pick":""}">${v}</button>`).join("")}</div>`:""}
     <div class="grid2">${q.o.map((o,j)=>{
-      let k=""; if(sh) k=j===q.a?"right":(pk(my)===j?"wrong":""); else if(pk(my)===j) k="pick";
-      const tg=(sh&&pk(my)===j)?`<span class="mine-tag">내 선택</span>`:"";
-      return `<button class="opt ${k}" data-v="${j}" ${closed?"disabled":""}>${esc(o)}${tg}</button>`;}).join("")}</div>
-    ${isBet&&closed&&my?`<div class="card" style="margin-top:14px;text-align:center">
+      let k=""; if(sh) k=j===q.a?"right":(cur===j?"wrong":""); else if(cur===j) k="pick";
+      const tg=(sh&&sent&&my.v===j)?`<span class="mine-tag">내 선택</span>`:"";
+      return `<button class="opt ${k}" data-v="${j}" ${locked?"disabled":""}>${esc(o)}${tg}</button>`;}).join("")}</div>
+    ${isBet&&sent?`<div class="card" style="margin-top:14px;text-align:center">
       <div style="font-size:13.5px;color:var(--mute)">내가 건 점수</div>
       <div style="font-size:32px;font-weight:700;margin-top:4px">${my.b}</div></div>`:""}
+    ${sh ? "" : (sent ? doneMsg() : submitBar(cur!==undefined))}
     ${tail(q, `정답은 ${"①②③④"[q.a]} ${q.o[q.a]}입니다.`)}</div>`;
   bindHome();
-  el.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{ S.bet=+b.dataset.b; paint(); });
-  if(!closed) el.querySelectorAll("[data-v]").forEach(b=>b.onclick=async()=>{
-    S.me.ans[id]= isBet?{v:+b.dataset.v,b:S.bet,k:1}:{v:+b.dataset.v,k:factorNow()}; await save(); paint(); });
+  if(!locked){
+    el.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{ S.bet=+b.dataset.b; paint(true); });
+    el.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{ setPick(id, +b.dataset.v); paint(true); });
+    el.querySelector("[data-submit]")?.addEventListener("click", async()=>{
+      const v=pickOf(id); if(v===undefined) return;
+      S.me.ans[id]= isBet?{v,b:S.bet,k:1}:{v, k:factorNow()}; await save(); paint(true); });
+  }
 }
 
 function screenText(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||secLeft()===0||my!==undefined;
-  const main=q.a.split(",")[0].trim();
+  const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0;
+  const main=q.a.split(",").split ? q.a.split(",")[0].trim() : q.a;
+  if(S.draftFor !== id){ S.draft=""; S.draftFor=id; }
   el.innerHTML = `<div class="wrap">${head(`3R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
-    ${closed?`<div class="card ansbox">${my?esc(my.v):`<span style="color:var(--mute);font-size:19px">미입력</span>`}</div>`
-      :`<input id="tv" placeholder="답을 입력하고 Enter" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <button class="go" id="tk">제출하기</button>
-        <p class="note">대소문자와 띄어쓰기는 신경 쓰지 않아도 됩니다.</p>`}
+    ${locked
+      ? `<div class="card ansbox">${sent?esc(my.v):`<span style="color:var(--mute);font-size:19px">미입력</span>`}</div>`
+      : `<input id="tv" placeholder="답을 입력하세요" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+         <p class="note">대소문자와 띄어쓰기는 신경 쓰지 않아도 됩니다.</p>`}
+    ${sh ? "" : (sent ? doneMsg() : submitBar(!!(S.draft||"").trim()))}
     ${tail(q, `정답은 ‘${main}’입니다.`)}</div>`;
   bindHome();
-  if(S.draftFor !== id){ S.draft=""; S.draftFor=id; }
-  const submit = async () => {
-    const iv=el.querySelector("#tv"); if(!iv) return;
-    const v=iv.value.trim(); if(!v) return;
-    S.me.ans[id]={v, k:factorNow()}; S.draft=""; await save(); paint(true);
-  };
-  el.querySelector("#tk")?.addEventListener("click", submit);
-  const iv=el.querySelector("#tv");
-  if(iv){
-    iv.value = S.draft || "";
-    iv.addEventListener("input", () => { S.draft = iv.value; });
-    iv.addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); submit(); } });
-    iv.focus();
-    try{ iv.setSelectionRange(iv.value.length, iv.value.length); }catch(e){}
+  if(!locked){
+    const submit = async () => {
+      const v=(S.draft||"").trim(); if(!v) return;
+      S.me.ans[id]={v, k:factorNow()}; S.draft=""; await save(); paint(true);
+    };
+    el.querySelector("[data-submit]")?.addEventListener("click", submit);
+    const iv=el.querySelector("#tv");
+    if(iv){
+      iv.value = S.draft || "";
+      iv.addEventListener("input", () => {
+        const had=!!(S.draft||"").trim(); S.draft=iv.value;
+        const has=!!iv.value.trim();
+        const btn=el.querySelector("[data-submit]");
+        if(btn && had!==has) btn.disabled = !has;   // 리렌더 없이 버튼만 갱신
+      });
+      iv.addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); submit(); } });
+      iv.focus();
+      try{ iv.setSelectionRange(iv.value.length, iv.value.length); }catch(e){}
+    }
   }
 }
 
 function screenOrder(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||secLeft()===0||my!==undefined;
+  const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0;
   const view=shufOf(c.ri,c.qi,q.items.length);
-  const picked=my?.v||S.ord;
+  if(S.ordFor!==id){ S.ord=[]; S.ordFor=id; }
+  const picked = sent ? my.v : S.ord;
   el.innerHTML = `<div class="wrap">${head(`4R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
-    ${sh ? q.items.map((s,i)=>`<button class="ord right" disabled><span class="n">${i+1}</span>${esc(s)}</button>`).join("")
+    ${sh ? q.items.map((x,i)=>`<button class="ord right" disabled><span class="n">${i+1}</span>${esc(x)}</button>`).join("")
       : view.map(oi=>{ const pos=picked.indexOf(oi);
-          return `<button class="ord ${pos>=0?"on":""}" data-o="${oi}" ${closed?"disabled":""}>
+          return `<button class="ord ${pos>=0?"on":""}" data-o="${oi}" ${locked?"disabled":""}>
             <span class="n">${pos>=0?pos+1:"·"}</span>${esc(q.items[oi])}</button>`; }).join("")}
-    ${!closed?`<div class="row" style="margin-top:14px">
+    ${locked ? "" : `<div class="row" style="margin-top:14px">
         <button class="ctl" id="rs" style="background:var(--panel2);border:1px solid var(--line);color:var(--mute)">다시 고르기</button>
-        <button class="ctl" id="sub" style="background:var(--flame);color:#0B1226" ${picked.length<q.items.length?"disabled":""}>제출하기</button>
-      </div>`:""}
+      </div>`}
+    ${sh ? "" : (sent ? doneMsg() : submitBar(picked.length===q.items.length))}
     ${tail(q, "정답 순서는 위와 같습니다.")}</div>`;
   bindHome();
-  if(!closed){
+  if(!locked){
     el.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{
       const oi=+b.dataset.o;
       if(S.ord.includes(oi)) S.ord=S.ord.filter(x=>x!==oi); else S.ord=[...S.ord,oi];
-      paint(); });
-    el.querySelector("#rs").onclick=()=>{ S.ord=[]; paint(); };
-    el.querySelector("#sub").onclick=async()=>{
+      paint(true); });
+    el.querySelector("#rs").onclick=()=>{ S.ord=[]; paint(true); };
+    el.querySelector("[data-submit]")?.addEventListener("click", async()=>{
       if(S.ord.length<q.items.length) return;
-      S.me.ans[id]={v:[...S.ord], k:factorNow()}; S.ord=[]; await save(); paint(); };
+      S.me.ans[id]={v:[...S.ord], k:factorNow()}; await save(); paint(true); });
   }
 }
 
 function screenIMG(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||secLeft()===0;
+  const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0;
   const dur=durOf(c.ri,c.qi), f=(dur-t)/dur;
   const st=sh?3:(f<0.34?0:f<0.67?1:2);
   const pts=[30,20,10,0][st];
+  const cur = sent ? my.v : pickOf(id);
+  // 제출 후에는 사진이 그 시점 상태로 멈춥니다 (배점이 확정되었으므로)
   const frac = sh ? 1 : TILE.start + (TILE.end-TILE.start)*f;
   el.innerHTML = `<div class="wrap">${head(`5R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
     ${clock(t)}${verdict()}${buBadge(q)}
     <div class="reveal"><img src="${q.img}" alt="">${tilesHTML(c.ri,c.qi,frac)}</div>
-    ${sh?"":`<div class="livewrap" style="margin:14px 0 20px"><span class="live">지금 맞히면 <b>${pts}점</b></span></div>`}
+    ${sh||sent?"":`<div class="livewrap" style="margin:14px 0 20px"><span class="live">지금 제출하면 <b>${pts}점</b></span></div>`}
     <div class="grid2">${q.o.map((o,j)=>{
-      let k=""; if(sh) k=j===q.a?"right":(my?.v===j?"wrong":""); else if(my?.v===j) k="pick";
-      const tg=(sh&&my?.v===j)?`<span class="mine-tag">내 선택</span>`:"";
-      return `<button class="opt ${k}" data-v="${j}" ${closed?"disabled":""}>${esc(o)}${tg}</button>`;}).join("")}</div>
+      let k=""; if(sh) k=j===q.a?"right":(cur===j?"wrong":""); else if(cur===j) k="pick";
+      const tg=(sh&&sent&&my.v===j)?`<span class="mine-tag">내 선택</span>`:"";
+      return `<button class="opt ${k}" data-v="${j}" ${locked?"disabled":""}>${esc(o)}${tg}</button>`;}).join("")}</div>
+    ${sh ? "" : (sent ? doneMsg() : submitBar(cur!==undefined))}
     ${tail(q, `정답은 ‘${q.o[q.a]}’입니다.`)}</div>`;
   bindHome();
-  if(!closed) el.querySelectorAll("[data-v]").forEach(b=>b.onclick=async()=>{
-    const tt=secLeft(), ff=(durOf(c.ri,c.qi)-tt)/durOf(c.ri,c.qi);
-    const nowPt=[30,20,10,0][ff<0.34?0:ff<0.67?1:2];
-    S.me.ans[id]={v:+b.dataset.v,pt:nowPt}; await save(); paint(); });
+  if(!locked){
+    el.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{ setPick(id, +b.dataset.v); paint(true); });
+    el.querySelector("[data-submit]")?.addEventListener("click", async()=>{
+      const v=pickOf(id); if(v===undefined) return;
+      const tt=secLeft(), ff=(dur-tt)/dur;
+      const nowPt=[30,20,10,0][ff<0.34?0:ff<0.67?1:2];
+      S.me.ans[id]={v, pt:nowPt}; await save(); paint(true); });
+  }
 }
 
 /* ── 점수 ──────────────────────────────────────────────────────── */
@@ -937,7 +985,7 @@ function screenAdmin(){
   bindHome();
   el.querySelector("#begin")?.addEventListener("click",async(ev)=>{
     const btn=ev.currentTarget; btn.disabled=true; btn.textContent="시작하는 중…";
-    const r = await put("ctrl",{...D0,live:true,started:Date.now()});
+    const r = await put("ctrl",{...D0,live:true,started:nowMs()});
     if(!r){ btn.disabled=false; btn.textContent="퀴즈 시작";
       alert("서버에 저장하지 못했습니다.\n"+(CONN_ERR||"콘솔(F12)에서 에러 메시지를 확인해 주세요.")); return; }
     sync(S.epoch);
@@ -946,16 +994,16 @@ function screenAdmin(){
   el.querySelector("#prev")?.addEventListener("click",async()=>{
     let {ri,qi}=c;
     if(qi>0) qi--; else if(ri>0){ ri--; qi=ROUNDS[ri].qs.length-1; }
-    await put("ctrl",{...c,ri,qi,show:false,started:Date.now()}); sync(); });
+    await put("ctrl",{...c,ri,qi,show:false,started:nowMs()}); sync(); });
   el.querySelector("#next")?.addEventListener("click",async()=>{
     let {ri,qi}=c;
     if(qi<ROUNDS[ri].qs.length-1) qi++;
     else if(ri<ROUNDS.length-1){ ri++; qi=0; }
     else { await put("ctrl",{...c,ri:ROUNDS.length,show:true}); sync(); return; }
-    await put("ctrl",{...c,ri,qi,show:false,started:Date.now()}); sync(); });
+    await put("ctrl",{...c,ri,qi,show:false,started:nowMs()}); sync(); });
   el.querySelectorAll("[data-r]").forEach(b=>b.onclick=async()=>{
     const v=b.dataset.r;
-    await put("ctrl",{...c,live:true,ri:v==="end"?ROUNDS.length:+v,qi:0,show:false,started:Date.now()}); sync(); });
+    await put("ctrl",{...c,live:true,ri:v==="end"?ROUNDS.length:+v,qi:0,show:false,started:nowMs()}); sync(); });
   el.querySelector("#invite")?.addEventListener("click", ()=>{ S.invite=true; screenInvite(); });
   el.querySelector("#simadd")?.addEventListener("click", simAdd);
   el.querySelector("#simans")?.addEventListener("click", simAnswer);
