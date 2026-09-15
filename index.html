@@ -158,7 +158,7 @@ const COUNT = 10;   // 기본 제한시간(초). 라운드별 sec 값이 우선
 const ADMIN_PIN = "0916";
 // 제품 맞히기: 사진을 타일로 가리고 시간이 지날수록 조금씩 걷어냅니다
 // start = 문제 시작 시 공개 비율 / end = 제한시간 종료 시 공개 비율
-const TILE = { cols:9, rows:7, start:0.08, end:0.60 };
+const TILE = { cols:10, rows:8, start:0.05, end:0.42 };  // 더 잘게, 더 천천히
 
 const ROUNDS = [
   { name:"1라운드 · O/X", type:"ox", pt:10, sec:10, spd:0.5, grace:5, hint:"사업부별로 한 문제씩 나옵니다", qs:[
@@ -204,7 +204,7 @@ const ROUNDS = [
       e:"1979년 창정비로 출발해 수리온 엔진 국산화, KF-21 엔진통합개발을 거쳐 지금은 첨단항공엔진 독자개발 역량 확보를 향해 가고 있습니다." },
   ]},
 
-  { name:"5라운드 · 제품 맞히기", type:"image", pt:30, sec:7, hint:"흐릿할 때 맞히면 30점, 늦어질수록 내려갑니다", qs:[
+  { name:"5라운드 · 제품 맞히기", type:"image", pt:30, sec:12, hint:"흐릿할 때 맞히면 30점, 늦어질수록 내려갑니다", qs:[
     { img:PHOTO.nuri, o:["누리호","나로호","다누리","달나라호"], a:0, bu:"우주사업부",
       e:"우주사업부가 담당하는 한국형 발사체로, 오는 10월 7일 5차 발사를 앞두고 있습니다." },
     { img:PHOTO.f414, o:["T700","F414","Trent 1000","F404"], a:1, bu:"항공사업부",
@@ -278,7 +278,7 @@ function connBanner(){
     <div style="font-size:13.5px;line-height:1.7;color:var(--ink)">${esc(CONN_ERR)}</div></div>`;
 }
 
-const S = { invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
+const S = { invite:false, code:"", pid:"", me:null, admin:false, ctrl:null, peers:[], tick:null, tickC:null, bet:20, ord:[], draft:"", draftFor:null, rendered:null, sig:null, epoch:0 };
 const el = document.getElementById("app");
 const K = k => `bq2:${S.code}:${k}`;
 const esc = s => String(s).replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -297,13 +297,19 @@ const save = () => put(`p:${S.pid}`, S.me);
 const qid = c => `${c.ri}-${c.qi}`;
 const curQ = c => ROUNDS[c.ri]?.qs[c.qi];
 const durOf = (ri,qi) => (qi!==undefined && ROUNDS[ri]?.qs?.[qi]?.sec) || ROUNDS[ri]?.sec || COUNT;
-const secLeft = () => Math.max(0, durOf(S.ctrl.ri,S.ctrl.qi) - Math.floor((Date.now()-(S.ctrl.started||Date.now()))/1000));
+let CLOCK_OFF = 0;   // (서버 기준 시각 - 내 시계) 보정값
+const nowMs = () => Date.now() + CLOCK_OFF;
+const secLeft = () => {
+  const dur = durOf(S.ctrl.ri, S.ctrl.qi);
+  if(!S.ctrl.started) return dur;
+  return Math.max(0, Math.ceil(dur - (nowMs() - S.ctrl.started)/1000));
+};
 // 속도 배점: 정답 기본점수 × (1 − spd × 경과비율). spd=0.5면 최소 50%까지만 감소
 const spdOf = ri => ROUNDS[ri]?.spd ?? 0;
 const graceOf = ri => ROUNDS[ri]?.grace ?? 0;
 function factorNow(){
   const ri = S.ctrl.ri, d = durOf(ri,S.ctrl.qi), g = Math.min(graceOf(ri), d);
-  const t = Math.min(d, Math.max(0, (Date.now()-(S.ctrl.started||Date.now()))/1000));
+  const t = Math.min(d, Math.max(0, (nowMs()-(S.ctrl.started||nowMs()))/1000));
   if(t <= g || d === g) return 1;            // 만점 유지 구간
   return 1 - spdOf(ri) * ((t - g) / (d - g)); // 이후 선형 감소
 }
@@ -340,7 +346,7 @@ const norm = s => String(s??"").toLowerCase().replace(/\s+/g,"").replace(/[.,·'
 const textOK = (v,q) => !!norm(v) && q.a.split(",").some(x => norm(x) === norm(v));
 
 function goHome(){
-  S.epoch=(S.epoch||0)+1;             // 지금까지의 요청을 전부 무효화합니다
+  S.epoch=(S.epoch||0)+1; clearInterval(S.tickC);             // 지금까지의 요청을 전부 무효화합니다
   clearInterval(S.tick); localStorage.removeItem("bq2_me");
   Object.assign(S,{code:"",pid:"",me:null,admin:false,ctrl:null,peers:[],bet:20,ord:[],draft:"",draftFor:null,rendered:null,sig:null});
   screenJoin();
@@ -437,13 +443,23 @@ async function start(){
   clearInterval(S.tick);
   const my = ++S.epoch;                          // 이 시작 이후의 응답만 반영합니다
   await sync(my);
-  S.tick = setInterval(()=>sync(my), S.admin?1200:2000);
+  S.tick = setInterval(()=>sync(my), S.admin?1500:3000);
+  clearInterval(S.tickC);
+  S.tickC = setInterval(()=>pollCtrl(my), 700);   // 문제 전환은 0.7초마다 감지
   if(S.admin) setInterval(()=>{ if(my===S.epoch && S.admin && S.ctrl?.live && !S.ctrl.show) screenAdmin(); }, 500);
 }
 async function sync(my){
   const ctrl=(await get("ctrl"))||D0, peers=await fetchPeers();
   if(my!==undefined && my!==S.epoch) return;      // 화면이 이미 바뀐 뒤 늦게 온 응답은 버립니다
   S.ctrl=ctrl; S.peers=peers; paint();
+}
+// 문제 전환을 즉시 감지하기 위해 ctrl만 짧은 주기로 확인합니다
+async function pollCtrl(my){
+  const ctrl = await get("ctrl");
+  if(!ctrl || (my!==undefined && my!==S.epoch)) return;
+  const changed = !S.ctrl || ctrl.ri!==S.ctrl.ri || ctrl.qi!==S.ctrl.qi
+                  || ctrl.show!==S.ctrl.show || ctrl.live!==S.ctrl.live || ctrl.started!==S.ctrl.started;
+  if(changed){ S.ctrl=ctrl; S.rendered=null; S.sig=null; paint(true); }
 }
 function refreshClock(){
   const t = secLeft();
@@ -457,7 +473,7 @@ function refreshClock(){
 }
 function sig(){
   const c=S.ctrl, id=qid(c);
-  return [c.ri, c.qi, c.live?1:0, revealed()?1:0,
+  return [c.ri, c.qi, c.live?1:0, revealed()?1:0, c.started||0,
           S.me ? JSON.stringify(S.me.ans[id] ?? null) : ""].join("|");
 }
 function paint(force){
@@ -467,7 +483,7 @@ function paint(force){
   const rr = ROUNDS[S.ctrl.ri], iid = qid(S.ctrl);
   // 정답 공개 후에는 바뀔 게 없으므로 다시 그리지 않는다 (배너 애니메이션 반복 방지)
   const sg = sig();
-  if(!force && revealed() && S.sig===sg) return;
+  if(!force && S.sig===sg && ROUNDS[S.ctrl.ri]?.type!=="image") return;  // 내용이 같으면 다시 그리지 않음
   // 주관식 입력 중에는 전체 리렌더 대신 타이머만 갱신 (입력값 유지)
   if(!force && rr?.type==="text" && !revealed() && S.me.ans[iid]===undefined
      && S.rendered===iid && el.querySelector("#tv")) return refreshClock();
@@ -526,7 +542,7 @@ function screenReady(){
 
 function screenOX(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||my!==undefined;
+  const sh=revealed(), closed=sh||secLeft()===0;
   const mv = my?.v;
   const cls = v => sh ? (v===q.a?"right":(mv===v?"wrong":"")) : (mv===v?"pick":"");
   const tag = v => (sh && mv===v) ? `<span class="mine-tag">내 선택</span>` : "";
@@ -542,7 +558,7 @@ function screenOX(){
 
 function screenChoice(type){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||my!==undefined, isBet=type==="bet";
+  const sh=revealed(), closed=sh||secLeft()===0, isBet=type==="bet";
   const pk = a => a?.v;
   const lbl = isBet ? "FINAL" : `${c.ri+1}R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`;
   el.innerHTML = `<div class="wrap">${head(lbl)}${clock(t)}${verdict()}${buBadge(q)}
@@ -565,7 +581,7 @@ function screenChoice(type){
 
 function screenText(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||my!==undefined;
+  const sh=revealed(), closed=sh||secLeft()===0||my!==undefined;
   const main=q.a.split(",")[0].trim();
   el.innerHTML = `<div class="wrap">${head(`3R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
@@ -594,7 +610,7 @@ function screenText(){
 
 function screenOrder(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||my!==undefined;
+  const sh=revealed(), closed=sh||secLeft()===0||my!==undefined;
   const view=shufOf(c.ri,c.qi,q.items.length);
   const picked=my?.v||S.ord;
   el.innerHTML = `<div class="wrap">${head(`4R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
@@ -623,9 +639,9 @@ function screenOrder(){
 
 function screenIMG(){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
-  const sh=revealed(), closed=sh||my!==undefined;
+  const sh=revealed(), closed=sh||secLeft()===0;
   const dur=durOf(c.ri,c.qi), f=(dur-t)/dur;
-  const st=sh?3:(f<0.29?0:f<0.64?1:2);
+  const st=sh?3:(f<0.34?0:f<0.67?1:2);
   const pts=[30,20,10,0][st];
   const frac = sh ? 1 : TILE.start + (TILE.end-TILE.start)*f;
   el.innerHTML = `<div class="wrap">${head(`5R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
@@ -688,13 +704,29 @@ function board(mine){
       <span class="sc">${x.sc}</span></div>`).join("") || `<div class="wait" style="padding:40px 0">아직 접속자가 없습니다</div>`}</div>`;
 }
 function screenFinal(){
-  const r=scores();
+  const iv = indivScores().slice(0,5);
   el.innerHTML = `<div class="wrap">${head("종료")}
-    <h1>${r[0]?.team ?? "—"}팀 우승</h1>
-    <p class="sub">사전학습에서 본 다섯 사업부를 팀으로 확인했습니다. 다음은 My Career 세션입니다.</p>
-    ${board(S.me.team)}
-    <p class="note">헷갈렸던 사업부가 있다면 기억해 두세요. 2일차 한화기념관 관람과 3일차 세션에서 다시 만납니다.</p></div>`;
+    <h1>결과 확인</h1>
+    <p class="sub">개인 점수 상위 5명입니다. 수고하셨습니다.</p>
+    <div class="card" style="padding:6px 0">${iv.length ? iv.map((x,i)=>`
+      <div class="rank ${i===0?"top":""} ${x.name===S.me.name&&x.team===S.me.team?"mine":""}">
+        <span class="p">${i+1}</span>
+        <span class="nm">${esc(x.name)}<span class="dl">${x.team}팀</span></span>
+        <span class="sc">${x.sc}</span></div>`).join("")
+      : `<div class="wait" style="padding:40px 0">집계된 점수가 없습니다</div>`}</div>
+    <div class="card" style="margin-top:14px;text-align:center">
+      <div style="font-size:13.5px;color:var(--mute)">내 점수</div>
+      <div style="font-size:34px;font-weight:700;margin-top:4px">${myScore()}</div>
+    </div></div>`;
   bindHome();
+}
+function myScore(){
+  let sc=0;
+  ROUNDS.forEach((r,ri)=>r.qs.forEach((q,qi)=>{
+    if(!counted(ri,qi)) return;
+    sc += gradeOne(r,q,S.me.ans?.[`${ri}-${qi}`]).pt;
+  }));
+  return sc;
 }
 
 /* ── 교육생 접속 안내 (관리자 전용) ──────────────────────────── */
