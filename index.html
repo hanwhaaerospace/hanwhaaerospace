@@ -172,7 +172,8 @@ const PHOTO = {
 
 const TEAMS = 10;
 const COUNT = 10;   // 기본 제한시간(초). 라운드별 sec 값이 우선
-const ADMIN_PIN = "0916";
+const ADMIN_PIN = "HASHRD";   // 관리자 PIN (대소문자 무시)
+const SESSION = "HAS";        // 세션 코드 고정 — 교육생·관리자 공통
 // 제품 맞히기: 사진을 타일로 가리고 시간이 지날수록 조금씩 걷어냅니다
 // start = 문제 시작 시 공개 비율 / end = 제한시간 종료 시 공개 비율
 const TILE = { cols:10, rows:8, start:0.05, end:0.42 };  // 더 잘게, 더 천천히
@@ -268,6 +269,11 @@ const STORE = {
     if(error){ console.error("[supabase delete]", error.message); return null; }
     return { key:k, deleted:true };
   },
+  async getPrefix(prefix){
+    const { data, error } = await sb.from("kv").select("id,value").like("id", prefix.replace(/[%_]/g,"\\$&")+"%");
+    if(error){ console.error("[supabase getPrefix]", error.message); return []; }
+    return data || [];
+  },
   async list(prefix){
     const { data, error } = await sb.from("kv").select("id").like("id", prefix.replace(/[%_]/g,"\\$&")+"%");
     if(error){ console.error("[supabase list]", error.message); return { keys:[] }; }
@@ -305,11 +311,14 @@ async function put(k,v){ try{ const r=await STORE.set(K(k), JSON.stringify(v), t
 async function get(k){ try{ const r=await STORE.get(K(k),true); return r?JSON.parse(r.value):null; }catch(e){ return null; } }
 async function fetchPeers(){
   try{
-    const r = await STORE.list(`bq2:${S.code}:p:`, true);
-    const out=[]; for(const k of (r?.keys||[])){ try{ const g=await STORE.get(k,true); if(g) out.push(JSON.parse(g.value)); }catch(e){} }
+    const rows = await STORE.getPrefix(`bq2:${S.code}:p:`);
+    const out=[]; for(const r of rows){ try{ out.push(JSON.parse(r.value)); }catch(e){} }
     return out;
   }catch(e){ return []; }
 }
+// 진행 상태 버전 비교: 늦게 도착한 옛날 상태로 화면이 되돌아가지 않게 합니다
+const ctrlVer = c => c?.v || 0;
+const isNewer = (n, o) => !o || !n.live || ctrlVer(n) >= ctrlVer(o);
 const save = () => put(`p:${S.pid}`, S.me);
 const qid = c => `${c.ri}-${c.qi}`;
 // 제출 전 임시 선택 (문제가 바뀌면 자동으로 비워집니다)
@@ -425,7 +434,6 @@ function screenJoin(mode){
   if(mode==="p"){
     el.innerHTML = `<div class="wrap narrow"><div class="bar"><span class="chip">교육생 입장</span></div>
       <h2>세션에 참여합니다</h2>
-      <label for="c">세션 코드</label><input id="c" placeholder="예: AERO916" autocapitalize="characters" autocomplete="off">
       <label for="n">이름</label><input id="n" placeholder="홍길동" autocomplete="off">
       <label for="t">소속 팀</label>
       <select id="t">${Array.from({length:TEAMS},(_,i)=>`<option value="${i+1}">${i+1}팀</option>`).join("")}</select>
@@ -433,11 +441,11 @@ function screenJoin(mode){
       <p class="note" id="err" style="color:var(--no)"></p></div>`;
     el.querySelector("#back").onclick = () => screenJoin();
     el.querySelector("#ok").onclick = async (ev) => {
-      const c=el.querySelector("#c").value.trim(), n=el.querySelector("#n").value.trim();
-      if(!c||!n){ el.querySelector("#err").textContent="세션 코드와 이름을 입력해 주세요."; return; }
+      const n=el.querySelector("#n").value.trim();
+      if(!n){ el.querySelector("#err").textContent="이름을 입력해 주세요."; return; }
       const btn=ev.currentTarget; btn.disabled=true; btn.textContent="입장하는 중…";
       await syncClock();
-      S.code=c.toUpperCase(); S.pid="p"+Math.random().toString(36).slice(2,9);
+      S.code=SESSION; S.pid="p"+Math.random().toString(36).slice(2,9);
       S.me={ id:S.pid, name:n, team:+el.querySelector("#t").value, ans:{} };
       const saved = await save();
       if(!saved){ btn.disabled=false; btn.textContent="입장하기";
@@ -450,21 +458,20 @@ function screenJoin(mode){
   if(mode==="a"){
     el.innerHTML = `<div class="wrap narrow"><div class="bar"><span class="chip">관리자 입장</span></div>
       <h2>진행자로 시작합니다</h2>
-      <label for="pin">관리자 PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="4자리" autocomplete="off">
-      <label for="ac">세션 코드</label><input id="ac" placeholder="새로 만들 코드 (예: AERO916)" autocapitalize="characters" autocomplete="off">
+      <label for="pin">관리자 PIN</label><input id="pin" type="password" inputmode="text" placeholder="PIN 입력" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
       <button class="go" id="ok">관리자로 시작</button>${back}
       <p class="note" id="err" style="color:var(--no)"></p></div>`;
     el.querySelector("#back").onclick = () => screenJoin();
     el.querySelector("#ok").onclick = async (ev) => {
-      const p=el.querySelector("#pin").value.trim(), c=el.querySelector("#ac").value.trim();
-      if(p!==ADMIN_PIN){ el.querySelector("#err").textContent="PIN이 일치하지 않습니다."; return; }
-      if(!c){ el.querySelector("#err").textContent="세션 코드를 입력해 주세요."; return; }
+      const p=el.querySelector("#pin").value.trim();
+      if(p.toUpperCase()!==ADMIN_PIN.toUpperCase()){ el.querySelector("#err").textContent="PIN이 일치하지 않습니다."; return; }
       const btn=ev.currentTarget; btn.disabled=true; btn.textContent="접속하는 중…";
       await syncClock();
       const ok = await checkConnection();
       if(!ok){ btn.disabled=false; btn.textContent="관리자로 시작"; el.querySelector("#err").textContent=CONN_ERR; return; }
-      S.code=c.toUpperCase(); S.admin=true; start();
+      S.code=SESSION; S.admin=true; start();
     };
+    el.querySelector("#pin").addEventListener("keydown", e => { if(e.key==="Enter") el.querySelector("#ok").click(); });
     return;
   }
   el.innerHTML = `<div class="wrap narrow" style="padding-top:34px">
@@ -507,9 +514,13 @@ async function start(){
   }, 500);
 }
 async function sync(my){
-  const ctrl=(await get("ctrl"))||D0, peers=await fetchPeers();
+  const ctrl=(await get("ctrl"))||D0;
+  // 교육생 화면은 최종 결과 화면에서만 다른 참가자 데이터가 필요합니다
+  const needPeers = S.admin || ctrl.ri >= ROUNDS.length;
+  const peers = needPeers ? await fetchPeers() : S.peers;
   if(my!==undefined && my!==S.epoch) return;      // 화면이 이미 바뀐 뒤 늦게 온 응답은 버립니다
-  S.ctrl=ctrl; S.peers=peers;
+  if(isNewer(ctrl, S.ctrl)) S.ctrl=ctrl;          // 더 최신 상태가 이미 반영돼 있으면 덮어쓰지 않음
+  S.peers=peers;
   if(S.admin && S.busy) return;                   // 관리자가 조작 중이면 화면 갱신 보류
   paint();
 }
@@ -524,6 +535,7 @@ async function adminAction(btn, label, build){
     const cur = (await get("ctrl")) || S.ctrl || D0;   // 화면에 박제된 값이 아니라 현재 값을 읽습니다
     const next = build(cur);
     if(next){
+      next.v = ctrlVer(cur) + 1;
       const ok = await put("ctrl", next);
       if(!ok){ alert("서버에 저장하지 못했습니다.\n" + (CONN_ERR || "잠시 후 다시 시도해 주세요.")); }
       else S.ctrl = next;
@@ -538,8 +550,10 @@ async function adminAction(btn, label, build){
 async function pollCtrl(my){
   const ctrl = await get("ctrl");
   if(!ctrl || (my!==undefined && my!==S.epoch)) return;
+  if(!isNewer(ctrl, S.ctrl)) return;
   const changed = !S.ctrl || ctrl.ri!==S.ctrl.ri || ctrl.qi!==S.ctrl.qi
                   || ctrl.show!==S.ctrl.show || ctrl.live!==S.ctrl.live || ctrl.started!==S.ctrl.started;
+  if(changed && !S.admin && ctrl.ri >= ROUNDS.length) S.peers = await fetchPeers();
   if(changed){ S.ctrl=ctrl; S.rendered=null; S.sig=null;
     S.pick=undefined; S.pickFor=null; S.ord=[]; S.ordFor=null; S.draft=""; S.draftFor=null;
     paint(true); }
@@ -556,7 +570,9 @@ function refreshClock(){
 }
 function sig(){
   const c=S.ctrl, id=qid(c);
-  return [c.ri, c.qi, c.live?1:0, revealed()?1:0, c.started||0, S.bet,
+  const fin = c.ri >= ROUNDS.length
+    ? S.peers.length + ":" + S.peers.reduce((n,p)=>n+Object.keys(p.ans||{}).length,0) : "";
+  return [fin, c.ri, c.qi, c.live?1:0, revealed()?1:0, c.started||0, S.bet,
           S.pickFor===id ? JSON.stringify(S.pick ?? null) : "",
           S.ordFor===id ? S.ord.join(",") : "",
           S.me ? JSON.stringify(S.me.ans[id] ?? null) : ""].join("|");
@@ -866,11 +882,7 @@ function screenInvite(){
       <div style="font-size:13.5px;color:var(--mute);margin-bottom:10px">접속 주소</div>
       <div style="font-size:20px;font-weight:600;word-break:break-all;line-height:1.55">${esc(url)}</div>
     </div>
-    <div class="card" style="padding:32px;border-color:var(--flame)">
-      <div style="font-size:13.5px;color:var(--mute);margin-bottom:12px">세션 코드</div>
-      <div style="font-size:56px;font-weight:700;letter-spacing:.06em;color:var(--ignite);line-height:1">${esc(S.code)}</div>
-    </div>
-    <p class="sub" style="margin-top:18px">접속 → <b style="color:var(--ink)">교육생으로 입장</b> → 세션 코드 · 이름 · 소속 팀 입력</p>
+    <p class="sub" style="margin-top:18px">접속 → <b style="color:var(--ink)">교육생으로 입장</b> → 이름 · 소속 팀 입력</p>
     <div class="envnote">이 주소는 인터넷이 되는 모든 기기에서 접속됩니다. 로그인이나 앱 설치가 필요 없습니다.</div>
   </div>`;
   el.querySelector("#back").onclick = () => { S.invite=false; screenAdmin(); };
@@ -971,8 +983,8 @@ function screenAdmin(){
       <button class="home" data-home>처음으로</button></span></div>
     <div class="cols"><div>
       ${!c.live?`<h2>아직 시작 전입니다</h2>
-        <p class="sub">교육생에게 세션 코드 <b style="color:var(--ignite)">${esc(S.code)}</b>를 안내하고,
-        우측에서 전원 접속을 확인한 뒤 시작하세요.</p><button class="go" id="begin">퀴즈 시작</button>`:`
+        <p class="sub"><b style="color:var(--ignite)">새 차수라면 먼저 아래 '세션 초기화'를 눌러 지난 기수 데이터를 지워주세요.</b>
+        그다음 교육생 접속 안내 화면을 띄우고, 우측에서 전원 접속을 확인한 뒤 시작하세요.</p><button class="go" id="begin">퀴즈 시작</button>`:`
         <div class="card" style="border-color:var(--flame)">
           <div style="display:flex;justify-content:space-between;font-size:13.5px;color:var(--mute)">
             <span>${esc(r?.name||"종료")}${r?` · ${durOf(c.ri,c.qi)}초`:""}</span>
@@ -1019,7 +1031,7 @@ function screenAdmin(){
   bindHome();
   el.querySelector("#begin")?.addEventListener("click",async(ev)=>{
     const btn=ev.currentTarget; btn.disabled=true; btn.textContent="시작하는 중…";
-    const r = await put("ctrl",{...D0,live:true,started:nowMs()});
+    const r = await put("ctrl",{...D0,live:true,started:nowMs(),v:ctrlVer(S.ctrl)+1});
     if(!r){ btn.disabled=false; btn.textContent="퀴즈 시작";
       alert("서버에 저장하지 못했습니다.\n"+(CONN_ERR||"콘솔(F12)에서 에러 메시지를 확인해 주세요.")); return; }
     sync(S.epoch);
@@ -1070,7 +1082,7 @@ function screenAdmin(){
   setInterval(syncClock, 60000);   // 1분마다 재보정
   await checkConnection();
   const s = localStorage.getItem("bq2_me");
-  if(s){ try{ const {code,pid}=JSON.parse(s); S.code=code; S.pid=pid;
+  if(s){ try{ const {code,pid}=JSON.parse(s); if(code!==SESSION) throw 0; S.code=code; S.pid=pid;
     const me=await get(`p:${pid}`); if(me){ S.me=me; return start(); } }catch(e){} }
   screenJoin();
 })();
