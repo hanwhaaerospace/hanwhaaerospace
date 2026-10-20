@@ -141,6 +141,7 @@
   .doneMsg{background:rgba(74,222,128,.13);border:1px solid rgba(74,222,128,.5);color:var(--ok);
     border-radius:14px;padding:20px;text-align:center;margin-top:18px;
     animation:pop .34s cubic-bezier(.2,1.5,.4,1)}
+  .doneMsg.still{animation:none}
   .doneMsg .t{font-size:19px;font-weight:700;margin-bottom:5px}
   .doneMsg .s{font-size:14px;opacity:.9}
   @media (max-width:520px){
@@ -310,10 +311,16 @@ const ctrlVer = c => c?.v || 0;
 const isNewer = (n, o) => !o || !n.live || ctrlVer(n) >= ctrlVer(o);
 const save = () => put(`p:${S.pid}`, S.me);
 const qid = c => `${c.ri}-${c.qi}`;
+// 라운드 라벨: 교육생·관리자 화면 공통 (1R~5R, 마지막은 FINAL)
+const rTag   = ri => ROUNDS[ri]?.name.startsWith("파이널") ? "FINAL" : `${ri+1}R`;
+const rTitle = ri => `${rTag(ri)} · ${(ROUNDS[ri]?.name.split("·")[1]||"").trim()}`;
+const qTag   = c  => rTag(c.ri) + (ROUNDS[c.ri].qs.length>1 ? ` · ${c.qi+1}/${ROUNDS[c.ri].qs.length}` : "");
 // 제출 전 임시 선택 (문제가 바뀌면 자동으로 비워집니다)
 function pickOf(id){ if(S.pickFor!==id){ S.pick=undefined; S.pickFor=id; } return S.pick; }
 function setPick(id,v){ S.pickFor=id; S.pick=v; }
-function doneMsg(){ return `<div class="doneMsg"><div class="t">제출이 완료되었습니다</div>
+function doneMsg(){
+  const id=qid(S.ctrl), first=S.doneFor!==id; S.doneFor=id;
+  return `<div class="doneMsg${first?"":" still"}"><div class="t">제출이 완료되었습니다</div>
   <div class="s">조금만 기다려 주세요!</div></div>`; }
 function submitBar(enabled){
   return `<div class="subwrap"><button class="subbtn" data-submit ${enabled?"":"disabled"}>제출하기</button></div>`;
@@ -439,7 +446,6 @@ function screenJoin(mode){
       const saved = await save();
       if(!saved){ btn.disabled=false; btn.textContent="입장하기";
         el.querySelector("#err").textContent="서버에 연결할 수 없습니다. "+(CONN_ERR||"잠시 후 다시 시도해 주세요."); return; }
-      if(!(await get("ctrl"))) await put("ctrl", D0);
       localStorage.setItem("bqs_me", JSON.stringify({code:S.code,pid:S.pid})); start();
     };
     return;
@@ -458,7 +464,9 @@ function screenJoin(mode){
       await syncClock();
       const ok = await checkConnection();
       if(!ok){ btn.disabled=false; btn.textContent="관리자로 시작"; el.querySelector("#err").textContent=CONN_ERR; return; }
-      S.code=SESSION; S.admin=true; start();
+      S.code=SESSION; S.admin=true;
+      if(!(await get("ctrl"))) await put("ctrl", D0);
+      start();
     };
     el.querySelector("#pin").addEventListener("keydown", e => { if(e.key==="Enter") el.querySelector("#ok").click(); });
     return;
@@ -475,7 +483,7 @@ function screenJoin(mode){
       <span class="pill">3R</span> 짧은 주관식<br>
       <span class="pill">4R</span> 순서 맞추기<br>
       <span class="pill">5R</span> 제품 맞히기<br>
-      <span class="pill">FN</span> 고난이도 주관식 · 50점
+      <span class="pill">FINAL</span> 고난이도 주관식 · 50점
     </div></div>
     <button class="go" id="pm">교육생으로 입장</button>
     <button class="ghost" id="am">관리자로 입장</button>
@@ -491,12 +499,13 @@ function screenJoin(mode){
 /* ── 루프 ──────────────────────────────────────────────────────── */
 async function start(){
   clearInterval(S.tick);
+  try{ const c0 = await get("ctrl"); S.gen = c0?.gen||0; }catch(e){ S.gen = 0; }
   S.joinAt = nowMs();          // 입장 시각 — 이미 진행 중이던 문제와 구분하기 위해
   const my = ++S.epoch;                          // 이 시작 이후의 응답만 반영합니다
   await sync(my);
-  S.tick = setInterval(()=>sync(my), S.admin?1500:3000);
+  S.tick = setInterval(()=>sync(my), S.admin?1500:6000);
   clearInterval(S.tickC);
-  S.tickC = setInterval(()=>pollCtrl(my), 700);   // 문제 전환은 0.7초마다 감지
+  S.tickC = setInterval(()=>pollCtrl(my), 1000);  // 문제 전환은 1초마다 감지
   if(S.admin) setInterval(()=>{
     if(S.busy) return;                       // 조작 중에는 화면을 다시 그리지 않습니다
     if(my===S.epoch && S.admin && S.ctrl?.live && !S.ctrl.show) screenAdmin();
@@ -540,6 +549,10 @@ async function pollCtrl(my){
   const ctrl = await get("ctrl");
   if(!ctrl || (my!==undefined && my!==S.epoch)) return;
   if(!isNewer(ctrl, S.ctrl)) return;
+  if(!S.admin && S.me && (ctrl.gen||0) !== (S.gen||0)){      // 관리자가 세션을 초기화함
+    S.gen = ctrl.gen||0; S.me.ans = {}; S.pick=undefined; S.pickFor=null; S.ord=[]; S.ordFor=null; S.draft="";
+    await save();                                             // 빈 답안으로 다시 등록 → 접속 인원에 다시 잡힘
+  }
   const changed = !S.ctrl || ctrl.ri!==S.ctrl.ri || ctrl.qi!==S.ctrl.qi
                   || ctrl.show!==S.ctrl.show || ctrl.live!==S.ctrl.live || ctrl.started!==S.ctrl.started;
   if(changed && !S.admin && ctrl.ri >= ROUNDS.length) S.peers = await fetchPeers();
@@ -573,7 +586,8 @@ function paint(force){
   const rr = ROUNDS[S.ctrl.ri], iid = qid(S.ctrl);
   // 정답 공개 후에는 바뀔 게 없으므로 다시 그리지 않는다 (배너 애니메이션 반복 방지)
   const sg = sig();
-  if(!force && S.sig===sg && ROUNDS[S.ctrl.ri]?.type!=="image") return;  // 내용이 같으면 다시 그리지 않음
+  const liveImg = rr?.type==="image" && !revealed() && S.me.ans[iid]===undefined;  // 사진이 걷히는 중일 때만
+  if(!force && S.sig===sg && !liveImg) return;  // 내용이 같으면 다시 그리지 않음
   // 주관식 입력 중에는 전체 리렌더 대신 타이머만 갱신 (입력값 유지)
   if(!force && rr?.type==="text" && !revealed() && S.me.ans[iid]===undefined
      && S.rendered===iid && el.querySelector("#tv")) return refreshClock();
@@ -627,7 +641,7 @@ function missedThis(){
 }
 function missedScreen(){
   const c=S.ctrl, r=ROUNDS[c.ri];
-  return `<div class="wrap">${head(`${c.ri+1}R · ${c.qi+1}/${r.qs.length}`)}
+  return `<div class="wrap">${head(qTag(c))}
     <div class="wait"><span class="pulse"></span>
       이 문제는 이미 진행 중입니다<br>
       <b style="color:var(--ink)">다음 문제부터 참여합니다</b><br>
@@ -650,7 +664,7 @@ function screenOX(){
   const cur = sent ? my.v : pickOf(id);
   const cls = v => sh ? (v===q.a?"right":(cur===v?"wrong":"")) : (cur===v?"pick":"");
   const tag = v => (sh && sent && my.v===v) ? `<span class="mine-tag">내 선택</span>` : "";
-  el.innerHTML = `<div class="wrap">${head(`1R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
+  el.innerHTML = `<div class="wrap">${head(qTag(c))}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
     <div class="ox"><button data-v="1" class="${cls(true)}" ${locked?"disabled":""}>O${tag(true)}</button>
     <button data-v="0" class="${cls(false)}" ${locked?"disabled":""}>×${tag(false)}</button></div>
@@ -669,7 +683,7 @@ function screenChoice(type){
   const c=S.ctrl,q=curQ(c),id=qid(c),my=S.me.ans[id],t=secLeft();
   const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0, isBet=type==="bet";
   const cur = sent ? my.v : pickOf(id);
-  const lbl = isBet ? "FINAL" : `${c.ri+1}R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`;
+  const lbl = qTag(c);
   el.innerHTML = `<div class="wrap">${head(lbl)}${clock(t)}${verdict()}${buBadge(q)}
     <h2>${esc(q.q)}</h2>
     ${isBet&&!locked?`<p class="sub">얼마를 걸까요? 맞히면 그만큼 얻고, 틀리면 그만큼 잃습니다.</p>
@@ -698,7 +712,7 @@ function screenText(){
   const sh=revealed(), sent=my!==undefined, locked=sh||sent||t===0;
   const main=q.a.split(",").split ? q.a.split(",")[0].trim() : q.a;
   if(S.draftFor !== id){ S.draft=""; S.draftFor=id; }
-  el.innerHTML = `<div class="wrap">${head(`3R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
+  el.innerHTML = `<div class="wrap">${head(qTag(c))}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
     ${locked
       ? `<div class="card ansbox">${sent?esc(my.v):`<span style="color:var(--mute);font-size:19px">미입력</span>`}</div>`
@@ -735,7 +749,7 @@ function screenOrder(){
   const view=shufOf(c.ri,c.qi,q.items.length);
   if(S.ordFor!==id){ S.ord=[]; S.ordFor=id; }
   const picked = sent ? my.v : S.ord;
-  el.innerHTML = `<div class="wrap">${head(`4R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
+  el.innerHTML = `<div class="wrap">${head(qTag(c))}
     ${clock(t)}${verdict()}${buBadge(q)}<h2>${esc(q.q)}</h2>
     ${sh ? q.items.map((x,i)=>`<button class="ord right" disabled><span class="n">${i+1}</span>${esc(x)}</button>`).join("")
       : view.map(oi=>{ const pos=picked.indexOf(oi);
@@ -767,8 +781,8 @@ function screenIMG(){
   const pts=[30,20,10,0][st];
   const cur = sent ? my.v : pickOf(id);
   // 제출 후에는 사진이 그 시점 상태로 멈춥니다 (배점이 확정되었으므로)
-  const frac = sh ? 1 : TILE.start + (TILE.end-TILE.start)*f;
-  el.innerHTML = `<div class="wrap">${head(`5R · ${c.qi+1}/${ROUNDS[c.ri].qs.length}`)}
+  const frac = sh ? 1 : (sent && my.fr!=null) ? my.fr : TILE.start + (TILE.end-TILE.start)*f;
+  el.innerHTML = `<div class="wrap">${head(qTag(c))}
     ${clock(t)}${verdict()}${buBadge(q)}
     <div class="reveal"><img src="${q.img}" alt="">${tilesHTML(c.ri,c.qi,frac)}</div>
     ${sh||sent?"":`<div class="livewrap" style="margin:14px 0 20px"><span class="live">지금 제출하면 <b>${pts}점</b></span></div>`}
@@ -785,7 +799,7 @@ function screenIMG(){
       const v=pickOf(id); if(v===undefined) return;
       const tt=secLeft(), ff=(dur-tt)/dur;
       const nowPt=[30,20,10,0][ff<0.34?0:ff<0.67?1:2];
-      S.me.ans[id]={v, pt:nowPt}; await save(); paint(true); });
+      S.me.ans[id]={v, pt:nowPt, fr: TILE.start + (TILE.end-TILE.start)*ff}; await save(); paint(true); });
   }
 }
 
@@ -913,12 +927,14 @@ function previewHTML(){
 /* 시연용 가상 교육생 — 실제 운영에서는 쓰지 않습니다 */
 const SIMNAMES=["김서연","박준호","이지우","최민재","정하늘","윤도현","장예린","한승우","오세진","배수현","신가온","문태윤"];
 async function simAdd(){
+  if(!confirm("시연용 가상 교육생 12명을 추가합니다. 실제 교육 중에는 누르지 마세요. 계속할까요?")) return;
   for(let i=0;i<SIMNAMES.length;i++){
     await put(`p:sim${i}`, { id:"sim"+i, name:SIMNAMES[i], team:(i%4)+1, ans:{}, sim:true });
   }
   sync();
 }
 async function simAnswer(){
+  if(!confirm("가상 교육생의 응답을 자동 생성합니다. 실제 교육 중에는 누르지 마세요. 계속할까요?")) return;
   const c=S.ctrl, r=ROUNDS[c.ri], q=curQ(c), id=qid(c);
   if(!r) return;
   const dur=durOf(c.ri,c.qi);
@@ -976,7 +992,7 @@ function screenAdmin(){
         그다음 교육생 접속 안내 화면을 띄우고, 우측에서 전원 접속을 확인한 뒤 시작하세요.</p><button class="go" id="begin">퀴즈 시작</button>`:`
         <div class="card" style="border-color:var(--flame)">
           <div style="display:flex;justify-content:space-between;font-size:13.5px;color:var(--mute)">
-            <span>${esc(r?.name||"종료")}${r?` · ${durOf(c.ri,c.qi)}초`:""}</span>
+            <span>${r ? esc(rTitle(c.ri)) : "종료"}${r?` · ${durOf(c.ri,c.qi)}초`:""}</span>
             <span>${idx} / ${total} · 응답 <b style="color:var(--ink)">${done}</b>/${S.peers.length}</span></div>
           <div style="font-size:19px;line-height:1.5;margin:14px 0 20px;font-weight:600">${esc(label)}</div>
           <div class="row">
@@ -991,15 +1007,15 @@ function screenAdmin(){
         <button id="invite" style="border-style:solid;border-color:var(--flame);color:var(--ignite);font-weight:650">교육생 접속 안내 화면 띄우기</button>
       </div>
       <h3>라운드 바로가기</h3>
-      <div class="abar">${ROUNDS.map((x,i)=>`<button data-r="${i}" class="${c.ri===i?"on":""}">${esc(x.name.split("·")[0].trim())}</button>`).join("")}
+      <div class="abar">${ROUNDS.map((x,i)=>`<button data-r="${i}" class="${c.ri===i?"on":""}">${esc(rTag(i))}</button>`).join("")}
         <button data-r="end" class="${c.ri>=ROUNDS.length?"on":""}">최종 순위</button></div>
       <button class="ghost" id="reset">세션 초기화</button>
     </div><div>
       <h3 style="margin-top:0">교육생 화면</h3>
       ${previewHTML()}
       <div class="simbar">
-        <button id="simadd">시연용 가상 교육생 12명</button>
-        <button id="simans">이 문제 응답 채우기</button>
+        <button id="simadd" style="opacity:.55">(시연용) 가상 교육생 12명</button>
+        <button id="simans" style="opacity:.55">(시연용) 응답 채우기</button>
       </div>
       <h3>팀 평균 점수</h3>${board(null)}
       <h3>개인 순위 (상위 10명)</h3>${indivBoard(10)}
@@ -1060,9 +1076,10 @@ function screenAdmin(){
   el.querySelector("#simans")?.addEventListener("click", simAnswer);
   el.querySelector("#reset").onclick=async()=>{
     if(!confirm("모든 교육생 응답을 삭제합니다. 계속할까요?")) return;
+    const gen = (ctrlVer(S.ctrl), (S.ctrl?.gen||0)+1);
     try{ const rr=await STORE.list(`bqs:${S.code}:`,true);
       for(const k of (rr?.keys||[])) await STORE.delete(k,true); }catch(e){}
-    await put("ctrl",D0); sync(); };
+    await put("ctrl",{...D0, gen}); sync(); };
 }
 
 /* ── 부팅 ──────────────────────────────────────────────────────── */
